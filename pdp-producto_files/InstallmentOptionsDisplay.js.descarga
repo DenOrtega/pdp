@@ -1,0 +1,361 @@
+//-----------------------------------------------------------------
+// Licensed Materials - Property of IBM
+//
+// WebSphere Commerce
+//
+// (C) Copyright IBM Corp. 2009, 2010 All Rights Reserved.
+//
+// US Government Users Restricted Rights - Use, duplication or
+// disclosure restricted by GSA ADP Schedule Contract with
+// IBM Corp.
+//-----------------------------------------------------------------
+
+
+dojo.addOnLoad(function() {
+	
+	installmentsTooltip = {
+		catalogEntryId : null,
+		hasInstallmentPrices : false,
+		parentContainer : dojo.query('.installments_cost')[0],
+		xPaymentsTable : dojo.byId('installment_table'),
+		xPaymentsTableBody : dojo.query('#installment_table tbody')[0],
+		catalog : null,
+		mouseOnPaymentsTable : false,
+		onclickHandles : [],
+		
+		init: function(catalogObj){
+			
+			this.catalog = catalogObj || null;
+			this.loadData();
+			
+			if (this.parentContainer && this.onclickHandles.length == 0){
+				this.onclickHandles.push(dojo.connect(this.parentContainer, 'onclick', this, this.toggleInstallmentsTable));
+				this.onclickHandles.push(dojo.connect(window.document, 'onclick', this, this.showHideInstallmentsTable));
+			}
+		},
+		
+		recalculateInstallments: function(quantity,catalogEntryId){
+			var normalInstallmentProductPrice; 
+			if(document.getElementById('normalInstallmentProductPrice')){
+				normalInstallmentProductPrice = document.getElementById('normalInstallmentProductPrice').value;
+			}else{
+				console.debug("missing product installment price: id=normalInstallmentProductPrice");
+			}
+			
+		 	var totalNormalPrice = normalInstallmentProductPrice * quantity;
+			this.hasInstallmentPrices = false;
+			
+			var tbody = this.xPaymentsTableBody;
+			if (tbody.hasChildNodes()){
+			    while(tbody.childNodes.length >= 1){
+			    	tbody.removeChild(tbody.firstChild);       
+			    } 
+			}
+			
+			var catalogObj = {
+				storeId: this.storeId,
+				langId :  this.langId,
+				catalogId : this.catalogId,
+				catalogEntryId : catalogEntryId,
+				nonInstallmentePrice : totalNormalPrice
+			};
+			this.init(catalogObj);
+		},
+
+		toggleInstallmentsTable : function(evt) {
+			var isOn = (dojo.style(this.xPaymentsTable,'display') == 'block') ? true : false;
+			
+			if (this.catalog && !this.hasInstallmentPrices) {
+				this.loadData();
+			}
+
+			this.showHideInstallmentsTable(evt, isOn);
+			
+		},
+
+		showHideInstallmentsTable: function(evt, flag) {
+			var table = this.xPaymentsTable, self = this,
+
+			// Used to check if the evt comes from installments container
+			isParent = (evt.target == this.parentContainer || evt.target.offsetParent == this.parentContainer);  
+
+			if (flag || (!isParent && self.tableOn)) {
+				this.hideInstallmentsTable();
+				
+			} else if (isParent && !flag ) {
+				if (!self.tableOn) {
+					this.showInstallmentsTable();					
+				}
+			}	
+			
+		},
+		
+		showInstallmentsTable: function() {
+			this.mouseOnPaymentsTable = true;
+			var table = this.xPaymentsTable, self = this;
+			
+			dojo.fadeIn({
+				node: table,
+				onBegin: function(){
+					dojo.style(table, 'display', 'block');
+				}
+			}).play();
+			self.tableOn = true;
+		},
+		
+		hideInstallmentsTable: function() {
+			this.mouseOnPaymentsTable = false;
+			var table = this.xPaymentsTable, self = this;
+			
+			dojo.fadeOut({
+				node: table,
+				onEnd: function(){
+					if(!installmentsTooltip.mouseOnPaymentsTable) {
+						dojo.style(table, 'display', 'none');
+					}
+					self.tableOn = false;
+				}
+			}).play();
+		},
+
+		// TBD
+		// API Call to get InstallmentOptions , currently uses GetCatalogEntryInstallmentPrice
+		loadData: function() {
+			var self = this;
+
+			if (!this.hasInstallmentPrices) {
+				var ct = this.catalog;
+				dojo.xhrGet({
+					url: getAbsoluteURL() + "GetCatalogEntryInstallmentPrice",				
+					content: {
+						storeId: ct.storeId,
+						langId: ct.langId,
+						catalogId: ct.catalogId,
+						catalogEntryId: ct.catalogEntryId,
+						nonInstallmentPrice: ct.nonInstallmentePrice
+					},
+					handleAs: "json-comment-filtered",
+					load: dojo.hitch(this, this.populateInstallmentOptions, ct.catalogEntryId),
+					error: function(errObj,ioArgs) {
+						console.debug("loadData: GetCatalogEntryInstallmentPrice Unexpected error occurred during an xhrGet request.");
+						console.debug("Error: " + errObj);
+					}
+				});
+			} else {
+				console.log('this.catalogEntryInstallmentPrices not empty...');
+			}
+		},
+		
+		SernacFinancieroCAE : function(inValorCuota, inImpuesto, inComision, inCantidadCuotas, inTotalCredito)
+		{ 
+		    var CAE = 0;
+		    var CAEtext = "";
+		    var separatorRegex = /\./g;
+		    var commaRegex = /,/g;
+		    var valorCuota = "0";
+		    var impuesto = inImpuesto; // always an integer
+		    var comision = inComision;  // set to 0
+		    var totalCredito = "1";
+		    // clean up the data
+		    var cantidadCuotas = inCantidadCuotas;
+		    
+		    inValorCuota = inValorCuota.replace(separatorRegex, "");
+		    inValorCuota = inValorCuota.replace(commaRegex, ".");
+		    valorCuota = parseFloat(inValorCuota);
+		    
+		    inTotalCredito = inTotalCredito.replace(separatorRegex, "");
+		    inTotalCredito = inTotalCredito.replace(commaRegex, ".");
+		    totalCredito = parseFloat(inTotalCredito);
+		    
+		    if (cantidadCuotas > 1 ){ 
+			    var factor = (1+(valorCuota + impuesto + comision) / totalCredito);    
+			    var vc1 = (valorCuota + impuesto + comision);
+			    var cnt = cantidadCuotas;
+			    var n = cantidadCuotas-1;    
+			    var k = n-1;
+			    while(cnt >= 1) {
+		            var1 = (((Math.pow(factor,cantidadCuotas))*-1) + (vc1/ totalCredito)*(Math.pow(factor,n))) ;  
+		            while(k>=0) {	          	          
+		            	var x = 0;
+		            	x = ((valorCuota/totalCredito) * (Math.pow(factor,k)));
+		            	var1 = var1 + x;          
+		            	k=k-1;	          
+			        }         
+					     
+				    var b = cantidadCuotas;
+				    var var2 = (((b *(Math.pow(factor,n))) *-1) + (n*(vc1/ totalCredito)*(Math.pow(factor,(n-1)))));
+				    var h = n-1;
+					    
+				    while(h>0) {
+				    	x = 0;
+				    	x= h * ((valorCuota/ totalCredito)*(Math.pow(factor,(h-1))));
+				    	var2 = var2 + x;      
+				    	h=h-1;
+				    }
+				    
+				    factor = (factor - (var1/var2));
+				    cnt = cnt-1;            
+				    k = n-1;
+				    h = n-1;        
+			    }
+			    
+			    CAE = (((factor-1)*12)*100);
+			    CAE = CAE.toFixed(2); 
+		    }
+			    
+		    if (isNaN(CAE)){
+		    	CAEtext = "Error al obtener CAE";
+		    } else {
+		    	CAEtext = CAE+'%';
+		    }
+		    return CAEtext;
+		},
+
+		calcImpuestoCredito : function(cuotas,valor) {
+		    var separatorRegex = /\./g;
+		    var commaRegex = /,/g;
+			var impuesto = 0;
+			
+			valor = valor.replace(separatorRegex, "");
+			valor = valor.replace(commaRegex, ".");
+			var fvalor = parseFloat(valor);
+			
+  /*START: Added the new formula for paymentToatal(impuesto) */			
+         		if (cuotas >= 12) {
+		      		impuesto = Math.floor(fvalor * 0.008);
+			    } else {
+				    impuesto = Math.floor(fvalor * 0.000666 * cuotas);
+			    }
+         		        		
+//         		//START: CenReqNum#132 Added else if condition to calculate CAE for the installments between 5 to 12.					
+//				 if (cuotas > 12) {
+//					 impuesto = Math.floor(fvalor * 0.000333 * 12);
+//				 }else if(cuotas > 5 && cuotas < 13){
+//					impuesto = Math.floor(fvalor * 0.000333 * cuotas);
+//				 }else {
+//						if(fvalor > 100000){
+//							impuesto = Math.floor(fvalor * 0.000285 * cuotas);
+//						}else{
+//							impuesto = Math.floor(fvalor * 0.000288 * cuotas);
+//						}
+//					}
+//				//END: CenReqNum#132 
+				 
+   /*END: Added the new formula for paymentToatal(impuesto)*/
+
+			if (cuotas == 1) {
+				impuesto = 0;
+			}
+			return parseInt(impuesto);
+		},
+
+		// TBD
+		// Populates the installment prices coming from GetCatalogEntryInstallmentPrice API call then store the response locally 
+		populateInstallmentOptions : function(catalogEntryId, response, ioArgs) {
+			var self = this,
+				tbody = this.xPaymentsTableBody;
+			
+			var paymentForMasCuota = null ;
+			if(document.getElementById('masCuotaId') != null  && document.getElementById('masCuotaId') != undefined){
+				paymentForMasCuota = document.getElementById('masCuotaId').value;
+			}
+			
+			if(paymentForMasCuota != null){
+				var installmentArray;
+				for(k = 0 ; k <response.length ;k++ ){
+					if(response[k].paymentMethodName == paymentForMasCuota){
+						installmentArray = response[k].installmentOptions ;
+					}				
+				}
+				
+				var numberOfInstallments = 0;
+				if(document.getElementById('numberOfInstallments')){
+					numberOfInstallments = document.getElementById('numberOfInstallments').value;
+				}
+				
+				if(installmentArray != null && installmentArray != undefined){
+					//Se borra calculo de cuota de responsive view
+					if(dojo.byId("calcula-cuota-resp")){
+						dojo.empty('calcula-cuota-resp');
+					}
+					for(k = 0 ; k <installmentArray.length ;k++ ){
+						var installTimeStr =  installmentArray[k].option;
+						var installPayment  = installmentArray[k].amount;
+						var originalPayment = installmentArray[k].originalPayment;
+						var paymentTotal	= installmentArray[k].paymentTotal;
+						var formattedInstallPayment = installmentArray[k].amountFormatted;
+						
+						var timearray = installTimeStr.split(' ');
+						var installTime = null;
+						if(timearray[1] != null && timearray[1] != undefined){
+							var timearray2  = timearray[1].split('x');
+							if(timearray2[0] != null && timearray2[0] != undefined){
+								installTime = timearray2[0];		
+							}
+						}
+						// Below Lines commented by Prakash/Grace Req No:495 Installments Start
+						var showCuotasArray = [4,5,6,12,15,24,36];
+						//var showCuotasArray = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36];
+						// Below Lines commented by Prakash/Grace Req No:495 Installments End
+						
+						if(installTime != null  &&  installPayment != null && (dojo.indexOf(showCuotasArray, installTime) > -1) ){
+							
+							var impuesto = this.calcImpuestoCredito(installTime,originalPayment);
+							var caeText = this.SernacFinancieroCAE(installPayment,impuesto,0,installTime,originalPayment);
+							
+							if(numberOfInstallments==installTime){
+								if(document.getElementById('installment-price')){
+									document.getElementById('installment-price').innerHTML = formattedInstallPayment;
+								}
+								if(document.getElementById('installment-total-price')){
+									document.getElementById('installment-total-price').innerHTML = paymentTotal;
+								}
+								if(document.getElementById('installment-cae')){
+									document.getElementById('installment-cae').innerHTML = caeText;
+								}
+							}
+							
+
+						//Start:- Requirement 973(DataLayer Phase2)	
+						     var installmentsDL=installmentsDL||[];
+						     installmentsDL.push({'count':installTime , 'price':formattedInstallPayment});
+						//End:- Requirement 973(DataLayer Phase2)	
+							
+							
+							//Texto en responsive page
+							try{
+								var _templateInput = document.getElementById('calculaCuotaTemplate');
+								if(_templateInput != null){
+									var template = _templateInput.value;
+									var texto = template.replace("{cuota}", installTime);
+									texto = texto.replace("{precio}", formattedInstallPayment);
+									texto = texto.replace("{total}", paymentTotal);
+									texto = texto.replace("{cae}", caeText);
+									var _li = dojo.create('li');
+									_li.innerHTML = texto;
+									dojo.place(_li, dojo.byId('calcula-cuota-resp'), k);
+								}
+							}catch(e){
+								//en caso de error ignorar
+							}
+							//fin texto en responsive page
+							
+							var row =  dojo.create('tr')					
+									dojo.place('<td>'+ installTime +'</td><td>'+ formattedInstallPayment +'</td><td>' + paymentTotal +'</td><td>'+ caeText +'</td>', row, 0 );
+									dojo.place(row, tbody, k);
+							this.hasInstallmentPrices = true;
+						}
+					}//end of for loop
+					
+			//Start:- Requirement 973(DataLayer Phase2)
+					dataLayer.push({ 
+						'installments':installmentsDL					  
+								  });
+	        //End:- Requirement 973(DataLayer Phase2)
+					
+				}// installmentArray is null
+			}//paymentForMasCuota is not null
+		}
+	}
+	
+});
